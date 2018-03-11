@@ -21,7 +21,9 @@
 SendOnlySoftwareSerial //MySerial.(3);
 */
 
-//#define __DEBUG__
+#define __DEBUG__
+#define __USE_COIL_DRIVEN__
+#define __USE_COIL_MONITOR__
 #if defined (__AVR_ATtiny85__)
   #define SENSOR_PORT_1 A1
   #define SENSOR_PORT_2 A2
@@ -46,7 +48,7 @@ SendOnlySoftwareSerial //MySerial.(3);
 #define CHANGE_PERIOD_TIME 1000
 
 #define DEBUG_TIME_QUIET 10000
-#define SENSOR_DRIVEN_LIMIT 100
+#define SENSOR_DRIVEN_LIMIT 60
 #define SENSOR_TEST_NUMBER 1000
 
 unsigned long timeOld = millis();
@@ -191,7 +193,7 @@ void setup() {
 #if defined (__DEBUG__)
   MySerial.print(F("MIN_PERIOD:"));
   MySerial.println(MIN_PERIOD);
-  MySerial.println(F("Starting attiny85 debug"));
+  MySerial.println(F("Starting attiny85 debug 1"));
 #endif
 }
 
@@ -204,13 +206,13 @@ void loop() {
 
     sensorPrevValue = sensorValue;
     if( 1 == currentPosition ){
-      sensorValue = analogRead(SENSOR_PORT_2);
-    }
-    else if( 2 == currentPosition ){
       sensorValue = analogRead(SENSOR_PORT_3);
     }
-    else if( 3 == currentPosition ){
+    else if( 2 == currentPosition ){
       sensorValue = analogRead(SENSOR_PORT_1);
+    }
+    else if( 3 == currentPosition ){
+      sensorValue = analogRead(SENSOR_PORT_2);
     } 
     
   // calculate sensorMax and sensorMin 
@@ -255,7 +257,7 @@ void loop() {
   sensorPrevValue2 = sensorPrevValue1;
   sensorPrevValue1 = sensorValue;
 
-
+#if defined (__USE_COIL_DRIVEN__)
   //calculate if the coild driven should start
   if( coilDriven == false && (sensorMaxValue - sensorMinValue) > SENSOR_DRIVEN_LIMIT && period < 30 ){
       coilDriven = true;
@@ -263,14 +265,33 @@ void loop() {
       MySerial.println("CD");
 #endif
   }
-  
-    if( true == coilDriven && (sensorMaxValue - sensorMinValue) < SENSOR_DRIVEN_LIMIT ){ // something when wrong
+#endif
+
+#if defined (__USE_COIL_MONITOR__)  
+    if( true == coilDriven && (sensorMaxValue - sensorMinValue) < SENSOR_DRIVEN_LIMIT*0.8 ){ // something when wrong
       digitalWrite(C1, LOW);
       digitalWrite(C2, LOW);
       digitalWrite(C3, LOW);
 
+
 #if defined (__DEBUG__)
+
+      
       MySerial.println("***********************   Error while sensor driving elapsed");
+
+      MySerial.print(F("\tMinValue:\t"));
+      MySerial.print(sensorMinValue);
+      MySerial.print(F("\tMaxValue:\t"));
+      MySerial.print(sensorMaxValue);
+      MySerial.print(F("Span:\t"));
+      MySerial.print((sensorMaxValue - sensorMinValue));
+      MySerial.print(F("\tcoilDriven\t"));
+      MySerial.print(coilDriven);
+      MySerial.print(F("\tperiod:\t"));
+      MySerial.println(period);
+      MySerial.print("currentPosition"); 
+      MySerial.println(currentPosition);
+      
       MySerial.print("idx");
       MySerial.print("\ttime");    
       MySerial.print("\tsensorValue:");
@@ -303,13 +324,14 @@ void loop() {
          MySerial.print("\n");          
       }
 #endif
-      delay(5000);
+      delay(10000);
       period = INITIAL_PERIOD;
       timeToChangePeriod =  timeNew + CHANGE_PERIOD_TIME;  
       sensorMinValue = sensorValue;
       sensorMaxValue = sensorValue;      
       coilDriven = false;
     }
+#endif
 
 #if defined (__DEBUG__)
   // this section controls de debug  
@@ -322,8 +344,8 @@ void loop() {
   logCalculated[logIdx][1] = currentDegrees;  
   logCalculated[logIdx][2] = curveDirection;
   
-
-  if (timeNew >= debugStartTime && false == debugActivated   ){ //&& false == coilDriven && period <= MIN_PERIOD && logCalculated[debugIdxToPrint][0] == 2 && logCalculated[DEBUG_SIZE-1][0] == 3
+  //this part starts the debug and print the debug header
+  if (timeNew >= debugStartTime && false == debugActivated  && false == coilDriven ){ //&& false == coilDriven && period <= MIN_PERIOD && logCalculated[debugIdxToPrint][0] == 2 && logCalculated[DEBUG_SIZE-1][0] == 3
     debugActivated = true;
 //    MySerial.println("***************************************");
 //    MySerial.print("timeNew:");
@@ -375,9 +397,10 @@ void loop() {
       debugActivated = false;
     }
   }
+#endif
   
-
-  if( true==debugActivated ) { //
+#if defined (__DEBUG__)
+  if( true==debugActivated && coilDriven==0) { //
     //Print the values on debugIdxToPrint
 /*
     MySerial.print(debugIdxToPrint);
@@ -417,33 +440,33 @@ void loop() {
  
  
   if( coilDriven == true ){
-    if(  currentPosition == 3 && 1 == curveDirection  &&  currentDegrees >= 0 && currentDegrees <= 40 ){ //
+    if(  currentPosition == 3 && 2 == curveDirection  &&  currentDegrees >= 0 && currentDegrees <= 30 ){ //
       //go to 1
 #ifndef __AVR_ATtiny85__      
         digitalWrite(LED_BUILTIN, HIGH);
 #endif      
-        digitalWrite(C1, HIGH);
-        digitalWrite(C2, LOW);
         digitalWrite(C3, LOW);
-  
+        digitalWrite(C1, HIGH);
+        digitalWrite(C2, HIGH);
+
         currentPosition = 1;
       timeOld = timeNew;
      
     }
-    else if( currentPosition == 1  && 1 == curveDirection &&  currentDegrees >= 0 && currentDegrees <= 40  ){ //
+    else if( currentPosition == 1  && 2 == curveDirection &&  currentDegrees >= 0 && currentDegrees <= 30  ){ //
       //go to 2
 #ifndef __AVR_ATtiny85__      
         digitalWrite(LED_BUILTIN, LOW);
 #endif        
-        digitalWrite(C2, HIGH);        
         digitalWrite(C1, LOW);
-        digitalWrite(C3, LOW);        
+        digitalWrite(C2, HIGH);        
+        digitalWrite(C3, HIGH);        
 
         currentPosition = 2; 
       timeOld = timeNew;
 
     }
-    else if( currentPosition == 2  && 1 == curveDirection &&  currentDegrees >= 0 && currentDegrees <= 40  ){ //
+    else if( currentPosition == 2  && 2 == curveDirection &&  currentDegrees >= 0 && currentDegrees <= 30  ){ //
           //go to 3  
 
 #if defined (__DEBUG__)
@@ -451,14 +474,15 @@ void loop() {
         int currentRPM = (1000 / (timeNew - timeLastTurn)) * 60;
         MySerial.print(F("RPM:"));
         MySerial.println(currentRPM);
+        MySerial.print(F("SensorSpan:"));
         MySerial.println(sensorMaxValue - sensorMinValue);
         timeToReportSpeed = timeNew + 10000;
       } 
       timeLastTurn = timeNew; 
 #endif
-        digitalWrite(C3, HIGH);
-        digitalWrite(C1, LOW);
         digitalWrite(C2, LOW);
+        digitalWrite(C3, HIGH);
+        digitalWrite(C1, HIGH);
 
         currentPosition = 3;  
         
@@ -472,18 +496,17 @@ void loop() {
       if(3 == currentPosition ){
         ////MySerial.println(F("1"));
        //digitalWrite(LED_BUILTIN, HIGH);
-        digitalWrite(C1, HIGH);
-        digitalWrite(C2, LOW);
         digitalWrite(C3, LOW);
-
+        digitalWrite(C1, HIGH);
+        digitalWrite(C2, HIGH);
         currentPosition = 1;
       }  
       else if(1 == currentPosition ){
         ////MySerial.println(F("2"));
         //digitalWrite(LED_BUILTIN, LOW);
-        digitalWrite(C2, HIGH);  
         digitalWrite(C1, LOW);
-        digitalWrite(C3, LOW);        
+        digitalWrite(C2, HIGH);  
+        digitalWrite(C3, HIGH);        
 
         currentPosition = 2; 
       }  
@@ -491,20 +514,28 @@ void loop() {
         ////MySerial.println(F("3"));
         
         //digitalWrite(LED_BUILTIN, LOW);
-        digitalWrite(C3, HIGH);
-        digitalWrite(C1, LOW);
         digitalWrite(C2, LOW);
+        digitalWrite(C3, HIGH);
+        digitalWrite(C1, HIGH);
+        
         currentPosition = 3;  
       }
       timeOld = timeNew;
     }
     
+#if defined (__USE_COIL_MONITOR__)    
     if( (timeNew - timeOld) > 100 ){ //this is protection to shootdown the coils y if the period is to long
         digitalWrite(C1, LOW);
         digitalWrite(C2, LOW);
-        digitalWrite(C3, LOW); 
+        digitalWrite(C3, LOW);
+        coilDriven = false;
+        period = INITIAL_PERIOD;
+        timeToChangePeriod =  timeNew + CHANGE_PERIOD_TIME;  
+        sensorMinValue = sensorValue;
+        sensorMaxValue = sensorValue;      
     }
-    
+#endif 
+   
  // //MySerial.println(timeNew);
 }
 
