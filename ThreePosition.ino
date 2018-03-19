@@ -1,7 +1,6 @@
 /*
-This is the find limits branch
-working version stable 
-a little slow than compare to timing
+This is the FindMaxChange
+this version will try to find the highest number that kick a change and swich from that when running by the sensor.
 */
 //#define __DEBUG__
 #if defined (__DEBUG__)
@@ -35,7 +34,7 @@ SendOnlySoftwareSerial MySerial(3);
 #define CHANGE_PERIOD_TIME 1000
 
 #define SENSOR_DRIVEN_LIMIT 100
-#define SENSOR_TEST_NUMBER 5000
+#define SENSOR_TEST_NUMBER 1000
 
 unsigned long timeOld = millis();
 unsigned long timeNew = millis();
@@ -57,13 +56,12 @@ int sensorMin = 0;
 int sensorMax = 0;
 int sensorMinNext = 0;
 int sensorMaxNext = 0;
-int sensorMinValue[3];
-int sensorMaxValue[3];
-int sensorMinValueNext[3];
-int sensorMaxValueNext[3];
 
-boolean coilDriven = false;
+boolean sensorDriven = false;
 
+int curveDirection = 0;
+int sensorPrevValue1 = 0;
+int sensorPrevValue2 = 0;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -81,19 +79,20 @@ void setup() {
 #if defined (__DEBUG__)
   MySerial.begin(19200);
   MySerial.println(F("Setup attiny85"));
-
+/*
   int sensorValue = analogRead(SENSOR_PORT_1);
   float voltage = ( sensorValue * (5.0 / 1023.0) )  ;
   MySerial.print(F("A0:")); MySerial.println(voltage);
+*/  
+  sensorValue = analogRead(A2);
   
-  sensorValue = analogRead(SENSOR_PORT_2);
-  voltage = ( sensorValue * (5.0 / 1023.0) )  ;
-  MySerial.print(F("A1:")); MySerial.println(voltage);
-  
+  double voltage = ( sensorValue * (5.0 / 1023.0) )  ;
+  MySerial.print(F("A2:")); MySerial.println(voltage);
+  /*
   sensorValue = analogRead(SENSOR_PORT_3);
   voltage = ( sensorValue * (5.0 / 1023.0) )  ;
   MySerial.print(F("A2:")); MySerial.println(voltage);
-  
+  */
 #endif  
   
 #if defined (__DEBUG__)
@@ -146,53 +145,29 @@ void loop() {
     sensorPrevValue = sensorValue;
     
     if( 1 == currentPosition ){
-      sensorValue = analogRead(SENSOR_PORT_3);
-      //sensorValue = analogRead(A2);
+      sensorValue = analogRead(SENSOR_PORT_2);
     }
+    
     else if( 2 == currentPosition ){
-      sensorValue = analogRead(SENSOR_PORT_1);
-      //sensorValue = analogRead(A2);
+      sensorValue = analogRead(SENSOR_PORT_3);
     }
     else if( 3 == currentPosition ){
-      sensorValue = analogRead(SENSOR_PORT_2);
-      //sensorValue = analogRead(A2);
+      sensorValue = analogRead(SENSOR_PORT_1);
     } 
     
-    
+    //sensorValue = analogRead(A2);
     
   // calculate sensorMax and sensorMin 
-  if(  abs(sensorValue - sensorPrevValue) < 20 && (timeNew - timeOld) > 2){
+  if(  abs(sensorValue - sensorPrevValue) < 20 && (timeNew - timeOld) > 3){
     if( sensorIdx >= SENSOR_TEST_NUMBER  ){
       sensorIdx = 0;
-      if( coilDriven == 0 ){
-        sensorMinValue[currentPosition-1] = sensorMinValueNext[currentPosition-1];
-        sensorMaxValue[currentPosition-1] = sensorMaxValueNext[currentPosition-1];
-        sensorMinValueNext[currentPosition-1] = sensorValue;    
-        sensorMaxValueNext[currentPosition-1] = sensorValue;
-      }
       sensorMin = sensorMinNext;
       sensorMax = sensorMaxNext;
       sensorMinNext = sensorValue;
       sensorMaxNext = sensorValue;
-      /*
-      if( timeNew > debugStartTime  ){
-        MySerial.print(F("m\t"));MySerial.print(sensorMinValue[currentPosition-1]);
-        MySerial.print(F("\tM\t"));MySerial.print(sensorMaxValue[currentPosition-1]);
-        MySerial.print(F("\ts\t"));MySerial.println(sensorMaxValue[currentPosition-1]-sensorMinValue[currentPosition-1]);
-        debugStartTime = timeNew+DEBUG_TIME_QUIET;
-      }
-      */
     }
     else {   
       sensorIdx++;
-      if( coilDriven == 0 ){
-        if( sensorValue > sensorMaxValueNext[currentPosition-1] ){
-           sensorMaxValueNext[currentPosition-1] = sensorValue;
-        }   
-        if( sensorValue < sensorMinValueNext[currentPosition-1] ){
-           sensorMinValueNext[currentPosition-1] = sensorValue;
-        }   
-      }  
       if(sensorValue > sensorMaxNext){
         sensorMaxNext = sensorValue;
       }
@@ -203,11 +178,24 @@ void loop() {
   }
 
 
+  //calculate curve direction and keep prev sensor values
+  if( abs(sensorValue - sensorPrevValue) < 20  &&  ((timeNew - timeOld) > 3) ){   
+    if ( sensorValue > sensorPrevValue1 && sensorPrevValue1 >= sensorPrevValue2 ){
+          curveDirection = 1;  
+    }
+    else if( sensorValue < sensorPrevValue1 && sensorPrevValue1 <= sensorPrevValue2  )
+         curveDirection = -1;
+    else curveDirection = 0; //invalid     
+         
+  }
+  else curveDirection = 0; //it is invalid
+  
+  sensorPrevValue2 = sensorPrevValue1;
+  sensorPrevValue1 = sensorValue;
 
 #if defined (__USE_COIL_DRIVEN__)
-  //calculate if the coild driven should start
-  if( coilDriven == false && (sensorMaxValue[currentPosition-1] - sensorMinValue[currentPosition-1]) > SENSOR_DRIVEN_LIMIT && period <= MIN_PERIOD+3 ){
-      coilDriven = true;
+  if( sensorDriven == false && (sensorMax - sensorMin) > SENSOR_DRIVEN_LIMIT && period < 20 ){
+      sensorDriven = true;
 #if defined (__DEBUG__)
       MySerial.println(F("CD"));
 #endif
@@ -216,7 +204,7 @@ void loop() {
 
 
 #if defined (__USE_COIL_MONITOR__)  
-    if( true == coilDriven && (sensorMax - sensorMin) < (double)SENSOR_DRIVEN_LIMIT*0.8 ){ // something when wrong
+    if( true == sensorDriven && (sensorMax - sensorMin) < (double)SENSOR_DRIVEN_LIMIT*0.8 ){ // something when wrong
       digitalWrite(C1, LOW);
       digitalWrite(C2, LOW);
       digitalWrite(C3, LOW);
@@ -230,8 +218,8 @@ void loop() {
       MySerial.print(sensorMaxValue[currentPosition-1]);
       MySerial.print(F("\tSpan:\t"));
       MySerial.print((sensorMaxValue[currentPosition-1] - sensorMinValue[currentPosition-1]));
-      MySerial.print(F("\tcoilDriven\t"));
-      MySerial.print(coilDriven);
+      MySerial.print(F("\tsensorDriven\t"));
+      MySerial.print(sensorDriven);
       MySerial.print(F("\tperiod:\t"));
       MySerial.println(period);
       MySerial.print(F("currentPosition")); 
@@ -243,63 +231,82 @@ void loop() {
       timeToChangePeriod =  timeNew + CHANGE_PERIOD_TIME;  
       sensorMin = sensorValue;
       sensorMax = sensorValue;      
-      coilDriven = false;
+      sensorDriven = false;
     }
 #endif
 
-
   //should I acelerate
   if( timeNew > timeToChangePeriod && period > MIN_PERIOD){
-    if(period < 25)
+    if(period < 30)
       period = period - 1;
     else period = period * 0.90;
     timeToChangePeriod =  timeNew + CHANGE_PERIOD_TIME;
- /*   //MySerial.print(F("period:"));
-    //MySerial.print(period);
+
+#if defined (__DEBUG__)
+    MySerial.print("p:");
+    MySerial.print(period);
+    
+    MySerial.print("\tMin:");
+    MySerial.print(sensorMin);
+    MySerial.print("\tMax");
+    MySerial.print(sensorMax);
+    MySerial.print("\ts:");
+    MySerial.println(sensorMax-sensorMin);
+    
+//    MySerial.print("1 L:"); MySerial.print(sensorMinValue[0]);MySerial.print("\tH:"); MySerial.println(sensorMaxValue[0]);
+    //MySerial.print("2 L:"); MySerial.print(sensorMinValue[1]);MySerial.print("\tH:"); MySerial.println(sensorMaxValue[1]);
+//    MySerial.print("3 L:"); MySerial.print(sensorMinValue[2]);MySerial.print("\tH:"); MySerial.println(sensorMaxValue[2]);
+    sensorMinValue[0] = 0;
+    sensorMinValue[1] = 0;
+    sensorMinValue[2] = 0;
+    sensorMaxValue[0] = 1024;
+    sensorMaxValue[1] = 1024;
+    sensorMaxValue[2] = 1024;
     //MySerial.print(F("\ttimeNew:"));
     //MySerial.print(timeNew);
     //MySerial.print(F("\ttimeToChangePeriod:"));
     //MySerial.println(timeToChangePeriod);
- */   
-    
+#endif    
   }  
  
+
  
-  if( coilDriven == true ){
-    double percent = (double)(sensorValue-sensorMinValue[currentPosition-1])/(double)(sensorMaxValue[currentPosition-1]-sensorMinValue[currentPosition-1]);
+  if( sensorDriven == true ){
+
+    double perc = (double)(sensorValue-sensorMin)/(sensorMax - sensorMin);
     
-    if( currentPosition == 3  && percent < 0.1 ){ // && curveDirection == 1
+    if(  currentPosition == 3  && curveDirection == 1 && perc < 0.3){ 
       //go to 1
 #ifndef __AVR_ATtiny85__      
         digitalWrite(LED_BUILTIN, HIGH);
 #endif      
-        digitalWrite(C3, LOW);
         digitalWrite(C1, HIGH);
-        digitalWrite(C2, HIGH);
+        digitalWrite(C2, LOW);
+        digitalWrite(C3, LOW);
 
         currentPosition = 1;
       timeOld = timeNew;
      
     }
-    else if( currentPosition == 1  && percent < 0.1 ){// && curveDirection == 1
+    else if( currentPosition == 1 && curveDirection == 1 && perc < 0.3){
       //go to 2
 #ifndef __AVR_ATtiny85__      
         digitalWrite(LED_BUILTIN, LOW);
 #endif        
+        digitalWrite(C2, HIGH);  
         digitalWrite(C1, LOW);
-        digitalWrite(C2, HIGH);        
-        digitalWrite(C3, HIGH);        
+        digitalWrite(C3, LOW);        
 
         currentPosition = 2; 
       timeOld = timeNew;
 
     }
-    else if( currentPosition == 2   && percent < 0.1 ){ //&& curveDirection == 1
+    else if( currentPosition == 2  && curveDirection == 1 && perc < 0.5){ 
           //go to 3  
 
-        digitalWrite(C2, LOW);
         digitalWrite(C3, HIGH);
-        digitalWrite(C1, HIGH);
+        digitalWrite(C2, LOW);
+        digitalWrite(C1, LOW);
 
         currentPosition = 3;  
         
@@ -309,52 +316,24 @@ void loop() {
   }
   else
     if( (timeNew - timeOld) > period ){ //this is time driven
-
       if(3 == currentPosition ){
-        
-        if( timeNew > debugStartTime ){
-          //MySerial.print("3\t");MySerial.println((sensorValue-sensorMinValue[currentPosition-1])/(sensorMaxValue[currentPosition-1]-sensorMinValue[currentPosition-1]));
-#if defined (__DEBUG__)
-          MySerial.print(currentPosition); MySerial.print("\t"); MySerial.print(sensorValue); MySerial.print("\t"); MySerial.print(sensorMinValue[currentPosition-1]); MySerial.print("\t"); MySerial.println(sensorMaxValue[currentPosition-1]);
-          debugStartTime = timeNew + DEBUG_TIME_QUIET;
-#endif
-        }
-       //digitalWrite(LED_BUILTIN, HIGH);
-        digitalWrite(C3, LOW);
         digitalWrite(C1, HIGH);
-        digitalWrite(C2, HIGH);
+        digitalWrite(C2, LOW);
+        digitalWrite(C3, LOW);
+
         currentPosition = 1;
       }  
       else if(1 == currentPosition ){
-        if( timeNew > debugStartTime ){
-          //MySerial.print("1\t");MySerial.println((sensorValue-sensorMinValue[currentPosition-1])/(sensorMaxValue[currentPosition-1]-sensorMinValue[currentPosition-1]));
-#if defined (__DEBUG__)
-          MySerial.print(currentPosition); MySerial.print("\t"); MySerial.print(sensorValue); MySerial.print("\t"); MySerial.print(sensorMinValue[currentPosition-1]);MySerial.print("\t"); MySerial.println(sensorMaxValue[currentPosition-1]);
-#endif
-          debugStartTime = timeNew + DEBUG_TIME_QUIET;
-        }
-        ////MySerial.println(F("2"));
-        //digitalWrite(LED_BUILTIN, LOW);
-        digitalWrite(C1, LOW);
         digitalWrite(C2, HIGH);  
-        digitalWrite(C3, HIGH);        
-
+        digitalWrite(C1, LOW);
+        digitalWrite(C3, LOW);        
+        
         currentPosition = 2; 
       }  
       else if(2 == currentPosition ){
-        if( timeNew > debugStartTime ){
-          //MySerial.print("2\t");MySerial.println((sensorValue-sensorMinValue[currentPosition-1])/(sensorMaxValue[currentPosition-1]-sensorMinValue[currentPosition-1]));
-#if defined (__DEBUG__)
-          MySerial.print(currentPosition); MySerial.print("\t"); MySerial.print(sensorValue); MySerial.print("\t"); MySerial.print(sensorMinValue[currentPosition-1]);MySerial.print("\t");MySerial.println(sensorMaxValue[currentPosition-1]);
-#endif          
-          debugStartTime = timeNew + DEBUG_TIME_QUIET;
-        }
-        ////MySerial.println(F("3"));
-        
-        //digitalWrite(LED_BUILTIN, LOW);
-        digitalWrite(C2, LOW);
         digitalWrite(C3, HIGH);
-        digitalWrite(C1, HIGH);
+        digitalWrite(C2, LOW);
+        digitalWrite(C1, LOW);
         
         currentPosition = 3;  
       }
@@ -366,7 +345,7 @@ void loop() {
         digitalWrite(C1, LOW);
         digitalWrite(C2, LOW);
         digitalWrite(C3, LOW);
-        coilDriven = false;
+        sensorDriven = false;
         period = INITIAL_PERIOD;
         timeToChangePeriod =  timeNew + CHANGE_PERIOD_TIME;  
         sensorMinValue = sensorValue;
