@@ -37,7 +37,7 @@ unsigned long period = INITIAL_PERIOD;
 unsigned long timeToChangePeriod;
 
 #define DEBUG_TIME_QUIET 10000
-#define DEBUG_SIZE 30
+#define DEBUG_SIZE 20
 unsigned long debugStartTime = 0;
 byte debugIdx = 0;
 byte debugIdxToPrint = 0;
@@ -45,7 +45,7 @@ byte logIdx = 0;
 //unsigned long logTime[DEBUG_SIZE];
 byte logSensor[DEBUG_SIZE]; //sensorvalue
 byte logCurrentPosition[DEBUG_SIZE];
-//byte logCurveDirection[DEBUG_SIZE];
+byte logCurveDirection[DEBUG_SIZE];
 boolean debugActivated = false;
 
 
@@ -63,8 +63,8 @@ unsigned int sensorMaxNext;
 boolean sensorDriven = false;
 
 byte curveDirection;
-int sensorPrevValue1;
-int sensorPrevValue2;
+unsigned int sensorPrevValue1;
+unsigned int sensorPrevValue2;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -194,10 +194,10 @@ void loop() {
 
   //calculate curve direction and keep prev sensor values
   if( abs(sensorValue - sensorPrevValue) < 20  &&  ((timeNew - timeOld) > 3) ){   
-    if ( sensorValue > sensorPrevValue1 && sensorPrevValue1 > sensorPrevValue2 ){
+    if ( sensorValue > sensorPrevValue1 && sensorPrevValue1 >= sensorPrevValue2 ){
           curveDirection = 1;  
     }
-    else if( sensorValue < sensorPrevValue1 && sensorPrevValue1 < sensorPrevValue2  )
+    else if( sensorValue < sensorPrevValue1 && sensorPrevValue1 <= sensorPrevValue2  )
          curveDirection = 2;
     else curveDirection = 0; //invalid     
   }
@@ -359,7 +359,7 @@ void loop() {
   byte perc = ((float)(sensorValue-sensorMin)/(sensorMax-sensorMin))*100;;
   logSensor[logIdx] = perc;
   logCurrentPosition[logIdx] = currentPosition; 
-//  logCurveDirection[logIdx] = curveDirection;
+  logCurveDirection[logIdx] = curveDirection;
   
 
   if (timeNew >= debugStartTime && false == debugActivated && false == sensorDriven  ){ //&& period <= MIN_PERIOD
@@ -435,14 +435,15 @@ void loop() {
     MySerial.print("\t");
     MySerial.print(logCurrentPosition[debugIdxToPrint]);    
     MySerial.print("\t");
-/*    
-    MySerial.print(logCurveDirection[debugIdxToPrint]);
+    
+    MySerial.println(logCurveDirection[debugIdxToPrint]);
+  /*  
     MySerial.print("\t");
-*/
+
     MySerial.print(sensorMin);
     MySerial.print("\t");
     MySerial.println(sensorMax);
-    
+    */
 #endif
     
   }
