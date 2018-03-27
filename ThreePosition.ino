@@ -2,7 +2,7 @@
 This is the ATTiny44A
 this version will try to find the highest number that kick a change and swich from that when running by the sensor.
 */
-#define __DEBUG__
+//#define __DEBUG__
 #if defined (__DEBUG__)
 #include <SendOnlySoftwareSerial.h>
 SendOnlySoftwareSerial MySerial(3);
@@ -14,18 +14,28 @@ SendOnlySoftwareSerial MySerial(3);
 */
   
 
-//#define __USE_COIL_DRIVEN__
-//#define __USE_COIL_MONITOR__
+#define __USE_COIL_DRIVEN__
+#define __USE_COIL_MONITOR__
 
-#define SENSOR_PORT_1 A0
-#define SENSOR_PORT_2 A1
-#define SENSOR_PORT_3 A2
-#define C1 10
-#define C2 9
-#define C3 8
+#if defined (__AVR_ATtiny44__)
+  #define SENSOR_PORT_1 A0
+  #define SENSOR_PORT_2 A1
+  #define SENSOR_PORT_3 A2
+  #define C1 10
+  #define C2 9
+  #define C3 8
+#endif
+#if defined (__AVR_ATtiny85__)
+  #define SENSOR_PORT_1 A1
+  #define SENSOR_PORT_2 A2
+  #define SENSOR_PORT_3 A3
+  #define C1 0
+  #define C2 1
+  #define C3 5
+#endif
 
 #define INITIAL_PERIOD 1000
-#define MIN_PERIOD 18
+#define MIN_PERIOD 16
 #define CHANGE_PERIOD_TIME 1000
 
 #define SENSOR_DRIVEN_LIMIT 100
@@ -66,6 +76,10 @@ byte curveDirection;
 unsigned int sensorPrevValue1;
 unsigned int sensorPrevValue2;
 
+byte change1;
+byte change2;
+byte change3;
+
 // the setup function runs once when you press reset or power the board
 void setup() {
   
@@ -75,6 +89,7 @@ void setup() {
   pinMode(C1, OUTPUT);
   pinMode(C2, OUTPUT);
   pinMode(C3, OUTPUT);
+  pinMode(7, OUTPUT);
   digitalWrite(C1,LOW);
   digitalWrite(C2,LOW);
   digitalWrite(C3,LOW);
@@ -82,7 +97,7 @@ void setup() {
 #if defined (__DEBUG__)
   MySerial.begin(19200);
 #endif  
-/*  
+
 #if defined (__DEBUG__)
   MySerial.println(F("Test Position 1"));
 #endif  
@@ -109,7 +124,7 @@ void setup() {
  delay(2000);
  digitalWrite(C3,LOW);
  delay(2000);
-*/
+
 
   //setup time variables
   timeNew = millis();
@@ -192,6 +207,8 @@ void loop() {
     }
   }
 
+  byte perc = ((float)(sensorValue-sensorMin)/(sensorMax-sensorMin))*100;
+
   //calculate curve direction and keep prev sensor values
   if( abs(sensorValue - sensorPrevValue) < 20  &&  ((timeNew - timeOld) > 3) ){   
     if ( sensorValue > sensorPrevValue1 && sensorPrevValue1 >= sensorPrevValue2 ){
@@ -199,7 +216,7 @@ void loop() {
     }
     else if( sensorValue < sensorPrevValue1 && sensorPrevValue1 <= sensorPrevValue2  )
          curveDirection = 2;
-    else curveDirection = 0; //invalid     
+    else curveDirection = 3; //equal     
   }
   else curveDirection = 0; //it is invalid
   
@@ -207,7 +224,7 @@ void loop() {
   sensorPrevValue1 = sensorValue;
 
 #if defined (__USE_COIL_DRIVEN__)
-  if( sensorDriven == false && (sensorMax - sensorMin) > SENSOR_DRIVEN_LIMIT && period < 20 ){
+  if( sensorDriven == false && (sensorMax - sensorMin) > SENSOR_DRIVEN_LIMIT && change1<45 && change2<45 && change3<45){
       sensorDriven = true;
       
 #if defined (__DEBUG__)
@@ -216,7 +233,7 @@ void loop() {
   }
 #endif
 
-/*
+
 #if defined (__USE_COIL_MONITOR__)  
     if( true == sensorDriven && (sensorMax - sensorMin) < (double)SENSOR_DRIVEN_LIMIT*0.8 ){ // something when wrong
       digitalWrite(C1, LOW);
@@ -248,7 +265,7 @@ void loop() {
       sensorDriven = false;
     }
 #endif
-*/
+
   //should I acelerate
   if( timeNew > timeToChangePeriod && period > MIN_PERIOD){
     if(period < 30)
@@ -275,29 +292,31 @@ void loop() {
 
 #if defined (__USE_COIL_DRIVEN__) 
   if( sensorDriven == true ){
-    byte perc = ((float)(sensorValue-sensorMin)/(sensorMax-sensorMin))*100;
     
-    if(  currentPosition == 3 && curveDirection == 1  && perc < 30){ //&&  && curveDirection != 2
+    
+    if(  currentPosition == 3 && curveDirection != 0  && perc < 45){ //&& 26 && curveDirection == 2
       //go to 1
         digitalWrite(C1, HIGH);
         digitalWrite(C2, LOW);
         digitalWrite(C3, LOW);
+        digitalWrite(7, HIGH); 
 
         currentPosition = 1;
         timeOld = timeNew;
      
     }
-    else if( currentPosition == 1 && curveDirection == 1 && perc < 30){ //&& 
+    else if( currentPosition == 1 && curveDirection != 0 && perc < 45){ //   44 && curveDirection == 0
       //go to 2      
       digitalWrite(C2, HIGH);  
       digitalWrite(C1, LOW);
-      digitalWrite(C3, LOW);        
+      digitalWrite(C3, LOW); 
+      digitalWrite(7, LOW);        
 
       currentPosition = 2; 
       timeOld = timeNew;
 
     }
-    else if( currentPosition == 2 && curveDirection == 1  && perc < 50){  // && curveDirection != 2
+    else if( currentPosition == 2 && curveDirection != 0 && perc < 45){  // 46 && curveDirection == 1
       //go to 3  
       digitalWrite(C3, HIGH);
       digitalWrite(C2, LOW);
@@ -333,6 +352,7 @@ void loop() {
         digitalWrite(C3, LOW);
 
         currentPosition = 1;
+        change1 = perc;
       }  
       else if(1 == currentPosition ){
         digitalWrite(C2, HIGH);  
@@ -340,6 +360,7 @@ void loop() {
         digitalWrite(C3, LOW);        
         
         currentPosition = 2; 
+        change1 = perc;
       }  
       else if(2 == currentPosition ){
         digitalWrite(C3, HIGH);
@@ -347,10 +368,12 @@ void loop() {
         digitalWrite(C1, LOW);
         
         currentPosition = 3;  
+        change1 = perc;
       }
       timeOld = timeNew;
     }
 
+#if defined (__DEBUG__)  
 
   // this section controls de debug  
   //first save the current values for debugging 
@@ -381,7 +404,6 @@ void loop() {
       debugIdxToPrint = logIdx + 1;
     else debugIdxToPrint = 0;
 
-#if defined (__DEBUG__)  
 /*
 
     //MySerial.print("\tMin:\t");
@@ -405,7 +427,6 @@ void loop() {
 */
     MySerial.print("\n");
     
-#endif
   }
   else if( true==debugActivated){
     if(debugIdx < DEBUG_SIZE ){
@@ -424,7 +445,6 @@ void loop() {
 
   if( true == debugActivated ) { 
     //calculate the index to print from the debugIndex
-#if defined (__DEBUG__)
 //    MySerial.print(debugIdxToPrint);
 //    MySerial.print("\t");
     
@@ -444,11 +464,12 @@ void loop() {
     MySerial.print("\t");
     MySerial.println(sensorMax);
     */
-#endif
     
   }
   // end debug logic 
-    
+#endif
+
+
 /*    
 #if defined (__USE_COIL_MONITOR__)    
     if( (timeNew - timeOld) > 100 ){ //this is protection to shootdown the coils y if the period is to long
